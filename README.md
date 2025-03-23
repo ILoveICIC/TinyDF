@@ -51,17 +51,14 @@ pip install -r requirements.txt
 
 ```
 python train.py --datasets
-training records is saved to ./log folder
-pre-training file is saved to ./checkpoints
+training results are saved to ./output
 concrete information see .train.py, please
 ```
 
-### 3. Test the TinyDF
+### 4. Test the TinyDF
 
 ```
 python test.py --datasets
-testing records is saved to ./log folder
-testing results are saved to ./Test
 concrete information see .test.py, please
 ```
 
