@@ -1,132 +1,88 @@
-import sys
 import os
-import time
-from loader import get_loader
-import imageio
-from micro import TEST
-from models.Model import Model
-sys.path.append(os.getcwd())
-from utils.loss_function import BceDiceLoss
-from utils.tools import continue_test,calculate_params_flops
-from utils.tools import continue_train, get_logger,set_seed
-from train_val_epoch import train_epoch,val_epoch
-import argparse
 import torch
-import numpy as np
-from tqdm import tqdm
-from utils.loss_function import get_metrics
-from PIL import Image
-from matplotlib import pyplot as plt
-
-torch.cuda.set_device(0)
-set_seed(42)
-torch.cuda.empty_cache()
-
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--datasets",
-    type=str,
-    default="ISIC2018",
-    help="input datasets name including ISIC2017, ISIC2018, PH2, Kvasir, or BUSI",
-)
-parser.add_argument(
-    "--imagesize",
-    type=int,
-    default=256,
-    help="input image resolution. 224 for VGG; 256 for Mamba",
-)
-parser.add_argument(
-    "--log",
-    type=str,
-    default="log",
-    help="input log folder: ./log",
-)
-parser.add_argument(
-    "--checkpoint",
-    type=str,
-    default='checkpoints',
-    help="the checkpoint path of last model: ./checkpoints",
-)
-parser.add_argument(
-    "--testdir",
-    type=str,
-    default='Test',
-    help="the folder is saving test results",
-)
+import torch.nn as nn
+import argparse
+from torch.utils.data import DataLoader
+from network.data import TestDataset
+from network.transform import Data_Transforms
+from network.tinykan import Net
+from network.plot_roc import plot_ROC
+import os
 
 
 
-def get_model():
-    model=Model(in_channels=[8,16,24,32,40],scale_factor=[1,2,4,8,16])
+def main():
+    args = parse.parse_args()
+    test_txt_path = args.test_txt_path
+    batch_size = args.batch_size
+    model_path = args.model_path
+    num_classes = args.num_classes
+    data_path = args.data_path
+	
+    torch.backends.cudnn.benchmark=True
+	
+    # -----create train&val data----- #
+    test_data = TestDataset(data_path=data_path, txt_path=test_txt_path, test_transform=Data_Transforms['test'])
+    test_loader = DataLoader(dataset=test_data, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
+    
+    # -----create model----- #
+    # model = MainNet(num_classes)
+    model = Net()
+    model.load_state_dict(torch.load(model_path, weights_only=True))
+	
+    if isinstance(model, nn.DataParallel):
+        model = model.module
+	
     model = model.cuda()
-    return model
-
-
-
-
-
-
-
-def test_epoch(test_loader,model,criterion,logger,path):
-    image_root =  os.path.join(path,'images')
-    gt_root =  os.path.join(path,'gt')
-    pred_root =  os.path.join(path,'pred')
-    if not os.path.exists(image_root):
-        os.makedirs(image_root)
-    if not os.path.exists(gt_root):
-        os.makedirs(gt_root)
-    if not os.path.exists(pred_root):
-        os.makedirs(pred_root)
     model.eval()
-    loss_list=[]
-    preds = []
-    gts = []
-    time_sum=0
+
+    correct_test = 0.0
+    total_test_samples = 0.0
     with torch.no_grad():
-        for data in tqdm(test_loader):
-            images, gt,image_name = data
-            images, gt = images.cuda().float(), gt.cuda().float()
-            time_start = time.time()
-            pred = model(images)
-            time_end = time.time()
-            time_sum = time_sum+(time_end-time_start)
-            loss = criterion(pred[0],gt)
-            loss_list.append(loss.item())
-            gts.append(gt.squeeze(1).cpu().detach().numpy())
-            preds.append(pred[0].squeeze(1).cpu().detach().numpy()) 
+        from tqdm import tqdm
+        tbar = tqdm(test_loader)
+        for i, data in enumerate(tbar):
+            img_rgb, labels_test = data
 
-    log_info,miou=get_metrics(preds,gts)
-    log_info=f'val loss={np.mean(loss_list):.4f}  {log_info}'
-    print(log_info)
-    logger.info(log_info)
-    return np.mean(loss_list),miou
+            img_rgb = img_rgb.cuda()
+            labels_test = labels_test.cuda()
+            
+            # feed data
+            pre_test = model(img_rgb)
+            
+            # prediction
+            _, pred = torch.max(pre_test.data, 1)
+            
+            # the number of all testing sample
+            total_test_samples += labels_test.size(0)
+            
+            # the correct number of prediction
+            correct_test += (pred == labels_test).squeeze().sum().cpu().numpy()
+            
+            # compute ROC
+            pre_test_abs = torch.nn.functional.softmax(pre_test, dim=1)
+            pred_abs_temp = torch.zeros(pre_test_abs.size()[0])
+            for m in range(pre_test_abs.size()[0]):
+                pred_abs_temp[m] = pre_test_abs[m][1]
 
+            label_test_list.extend(labels_test.detach().cpu().numpy())
+            predict_test_list.extend(pred_abs_temp.detach().cpu().numpy())
+            
+        print("Testing Acc: {:.2%}".format(correct_test/total_test_samples))
 
-
-def test(args):
-    #init_checkpoint folder
-    checkpoint_path=os.path.join(os.getcwd(),args.checkpoint,args.datasets)
-    #logger
-    logger = get_logger('test', os.path.join(os.getcwd(),args.log))
-    #initialization cuda
-    # set_cuda(gpu_id='6')
-    #get loader
-    test_loader=get_loader(args.datasets,1,args.imagesize,mode=TEST)
-    
-    #get model
-    model=get_model()
-    #calculate parameters and flops
-    calculate_params_flops(model,size=args.imagesize,logger=logger)
-    #set loss function
-    criterion=BceDiceLoss()
-    
-    #Do continue to run?
-    model,_,_=continue_test(model=model,checkpoint_path=checkpoint_path)
-    #start to run the model
-    test_epoch(test_loader,model,criterion,logger,os.path.join(os.getcwd(),'Test',args.datasets))
-
-
+    # ROC curve
+    plot_ROC(label_test_list, predict_test_list)
 
 if __name__ == '__main__':
-    args = parser.parse_args()
-    test(args)
+    parse = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parse.add_argument('--batch_size', '-bz', type=int, default=64)
+    parse.add_argument('--data_path', type=str, default = '/home/ghy/shujuji/FaceForensics++/c23')
+    parse.add_argument('--test_txt_path', '-tp', type=str, default = 'test.txt')
+    parse.add_argument('--model_path', '-mp', type=str, default='/home/ghy/Mine/ghy-ICME/TinyDF.pkl')
+    parse.add_argument('--num_classes', '-nc', type=int, default=2)
+    
+    label_test_list = []
+    predict_test_list = []
+    
+    main()
