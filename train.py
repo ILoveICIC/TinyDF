@@ -139,13 +139,13 @@ def main():
 
 if __name__ == '__main__':
     parse = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parse.add_argument('--name', '-n', type=str, default='v4-no')
-    parse.add_argument('--data_path', type=str, default = '/home/ghy/shujuji/FaceForensics++/c23')
+    parse.add_argument('--name', '-n', type=str, default='')
+    parse.add_argument('--data_path', type=str, default = '/data/FaceForensics++/c23')
     parse.add_argument('--train_txt_path', '-tp', type=str, default = 'train.txt')
     parse.add_argument('--valid_txt_path', '-vp', type=str, default = 'test.txt')
     parse.add_argument('--batch_size', '-bz', type=int, default=64)
     parse.add_argument('--epoches', '-e', type=int, default=20)
-    parse.add_argument('--model_name', '-mn', type=str, default='sfic-resnet.pkl')
+    parse.add_argument('--model_name', '-mn', type=str, default='TinyDF.pkl')
     parse.add_argument('--continue_train', type=bool, default=False)
     parse.add_argument('--model_path', '-mp', type=str, default="")
     parse.add_argument('--num_classes', '-nc', type=int, default=2)
