@@ -79,7 +79,7 @@ if __name__ == '__main__':
     parse.add_argument('--batch_size', '-bz', type=int, default=64)
     parse.add_argument('--data_path', type=str, default = '/data/FaceForensics++/c23')
     parse.add_argument('--test_txt_path', '-tp', type=str, default = 'test.txt')
-    parse.add_argument('--model_path', '-mp', type=str, default='/home/ghy/Mine/ghy-ICME/TinyDF.pkl')
+    parse.add_argument('--model_path', '-mp', type=str, default='TinyDF.pkl')
     parse.add_argument('--num_classes', '-nc', type=int, default=2)
     
     label_test_list = []
